@@ -7,7 +7,7 @@ alerts/
 ├── README.md               # Users and operators: install, channels, run, deploy, administer.
 ├── CONTRIBUTING.md         # This file: architecture, rules to preserve, tests, releases.
 ├── pyproject.toml          # Package, entry points, mcp-app pin, pytest config.
-├── Dockerfile, gapp.yaml   # Container build; gapp manifest for Cloud Run (deployment-neutral).
+├── Dockerfile              # Container build: the one deployment artifact the repo carries.
 ├── alerts/
 │   ├── __init__.py         # The App: name, tools module, SDK package. No profile model.
 │   ├── sdk/
@@ -132,18 +132,23 @@ hints become the schema and the docstring the description that agents and
 and how to call the tool, and keep rules 1 and 2 above. A tool that changes
 sharing of a channel is administrator-only: call `cls.require_admin()` first.
 
-## Deployment configuration
+## Deployment configuration and environment variables
 
-`gapp.yaml` describes what every deployment of this repo has in common: the
-Dockerfile, public HTTP (the app does its own auth), the data path on the
-mounted bucket with `REQUIRED_FS_TYPE=fuse`, and `ALERTS_CHANNELS` as a
-user-provided secret. Anything that names one deployment (`AUTH_ISSUER`,
-`ADMIN_EMAILS`, `AUTH_EMAIL_CLAIM`, a domain) stays out of the repo: a gapp
-fleet entry carries it and gapp merges `env` entries by name over the
-manifest at deploy time. Any other platform supplies the same variables its
-own way (the Dockerfile and the runtime contract in the README are the
-contract). Never put a value that identifies a deployment, or any
-credential, in this repo.
+The repo describes what the server needs from any environment and nothing
+about where it runs: the Dockerfile and the README's runtime contract are
+the whole deployment story. No deployment tool's configuration file, and no
+value that identifies one deployment (issuer, administrators, domain,
+project), is ever committed here. Those live in the operator's own
+deployment records.
+
+The README's [Environment variables](README.md#environment-variables)
+section is the contract for configuration: a quick-look table (variable,
+transport, required, type, default when unset, secret) and a reference entry
+per variable (format and accepted values, an example, what happens when it
+is missing or wrong). A change that reads a new variable, or changes how one
+is parsed or defaulted, updates both in the same commit.
+`tests/unit/test_env_docs.py` fails when a variable the code reads is
+missing from the table.
 
 ## Releases
 
@@ -160,9 +165,9 @@ build) read it from `.git_archival.txt`, which `.gitattributes` marks
 | New major | only with the maintainer's explicit approval |
 
 Release: merge the reviewed change to `main`, tag that commit
-(`git tag -a vX.Y.Z -m vX.Y.Z` and push the tag), deploy the tag through CI
-(`gapp ci deploy alerts --ref vX.Y.Z`), then verify with `alerts-admin probe`
-and a `notify` from a real MCP client. Update any install pin that names a
+(`git tag -a vX.Y.Z -m vX.Y.Z` and push the tag), deploy that tag through
+the operator's deployment pipeline (never a local build), then verify with
+`alerts-admin probe` and a `notify` from a real MCP client. Update any install pin that names a
 version only after the tag exists on GitHub.
 
 ## Pre-commit
