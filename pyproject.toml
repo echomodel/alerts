@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alerts"
+dynamic = ["version"]
+description = "MCP server that lets agents push an alert to a person's phone, with a link back to the conversation"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp-app @ git+https://github.com/echomodel/mcp-app.git@v2.0.0",
+    "apprise>=2.2,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.25",
+]
+
+[project.scripts]
+alerts-mcp = "alerts:app.mcp_cli"
+alerts-admin = "alerts:app.admin_cli"
+
+[project.entry-points."mcp_app.apps"]
+alerts = "alerts:app"
+
+[project.urls]
+Homepage = "https://github.com/echomodel/alerts"
+Repository = "https://github.com/echomodel/alerts"
+
+[tool.setuptools_scm]
+# The version comes from the latest vX.Y.Z git tag. Builds from a `git archive`
+# snapshot (the cloud deploy) read it from .git_archival.txt; the fallback only
+# applies when neither git metadata nor the archival file is available.
+fallback_version = "0.0.0+unknown"
+
+[tool.setuptools.packages.find]
+include = ["alerts*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.eggs/
+
+# Environment
+.env
+
+# Testing
+.pytest_cache/
+
+# Agent context dirs: only the shared settings file is versioned.
+.claude/
+.gemini/*
+!.gemini/settings.json
+
+# OS
+.DS_Store
+
+# Logs
+*.log

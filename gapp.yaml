@@ -1,0 +1,19 @@
+# gapp deployment manifest: deployment to Google Cloud Run via gapp
+# (https://github.com/echomodel/gapp). Optional; the server also runs as
+# a local stdio MCP server or in any container (see README "Deploy").
+#
+# The repo's Dockerfile is built as is. Values that identify one
+# deployment (AUTH_ISSUER, ADMIN_EMAILS, AUTH_EMAIL_CLAIM, a custom
+# domain) are not here: a gapp fleet entry or the deploying environment
+# supplies them, merged over this file by env var name.
+
+public: true
+
+env:
+  - name: APP_USERS_PATH
+    value: "{{SOLUTION_DATA_PATH}}/users"
+  - name: REQUIRED_FS_TYPE
+    value: fuse
+  - name: ALERTS_CHANNELS
+    secret:
+      name: channels
