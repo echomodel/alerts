@@ -108,27 +108,22 @@ administrators only.
 
 ## Deploy (HTTP)
 
-The server is a standard Python web service. Any environment that can run a
-container and supply the variables below can host it.
+The server is a standard Python web service. Any environment that can run
+the container, set the variables in [Environment variables](#environment-variables),
+and keep one directory across restarts can host it. This repo carries no
+deployment-tool configuration: where and how a deployment runs belongs to
+the operator's own deployment records.
 
-### Runtime contract
-
-| Variable | Required | If missing | Purpose |
-|---|---|---|---|
-| `AUTH_ISSUER` | yes | startup fails | The identity provider's issuer URL, exactly as it appears in the token's `iss` claim (trailing slash included if the issuer uses one). |
-| `ADMIN_EMAILS` | yes | nobody can administer | Comma-separated emails of the administrators. Each is admitted on first sign-in and sees the admin tools. |
-| `AUTH_EMAIL_CLAIM` | if the issuer namespaces it | `email` | The access-token claim carrying the user's email. |
-| `ALERTS_CHANNELS` | yes | every tool reports "no channels configured" | The channel definitions (the `name = url` lines), from the platform's secret store. |
-| `APP_USERS_PATH` | yes, for durable data | `~/.local/share/alerts/users/` | Per-user data (grants, admission state). Must be persistent storage: the container filesystem loses it on restart. |
-| `REQUIRED_FS_TYPE` | recommended | no check | Filesystem type the data directory must be on (`fuse` for a mounted bucket); startup fails if the volume is missing instead of silently losing data. |
-| `AUTH_AUDIENCE` | no | derived from `Host` | Pin the token audience when the service is reached by address or on several hostnames. |
-
-- Start command: `alerts-mcp serve` (default `0.0.0.0:8080`).
-- MCP endpoint: `/` (root). Health: `GET /health`, no auth. Discovery:
-  `GET /.well-known/oauth-protected-resource`, no auth.
-- Auth: standard MCP OAuth. The server validates the identity provider's
-  tokens itself; the platform must pass unauthenticated traffic through and
-  forward `Host` unchanged.
+- **Start command:** `alerts-mcp serve`, listening on `0.0.0.0:8080`
+  (`--host`, `--port` to change). `PORT` is not read.
+- **MCP endpoint:** `/` (root). **Health:** `GET /health`, no auth.
+  **Discovery:** `GET /.well-known/oauth-protected-resource`, no auth.
+- **Auth:** standard MCP OAuth. The server validates the identity
+  provider's tokens itself; the platform must let unauthenticated traffic
+  through to the app and forward `Host` unchanged.
+- **Storage:** one directory (`APP_USERS_PATH`) that survives restarts.
+- **Secrets:** only `ALERTS_CHANNELS`. Inject it from the platform's secret
+  store, never from the repo or an image.
 
 ### Docker
 
@@ -141,6 +136,9 @@ docker run -p 8080:8080 \
   -v /persistent/path:/data -e APP_USERS_PATH=/data/users \
   alerts
 ```
+
+Any container platform (Cloud Run, Fly, Render, Kubernetes, a VM with
+systemd) takes the same image and the same variables, set its own way.
 
 ### Identity provider
 
@@ -159,26 +157,120 @@ Once per deployment, at the identity provider:
 An MCP client then needs only the URL: it discovers the issuer, signs the
 user in, and holds the token. Nothing is pasted anywhere.
 
-### Google Cloud Run with gapp
+## Environment variables
 
-The repo carries a [gapp](https://github.com/echomodel/gapp) manifest,
-`gapp.yaml`: the Dockerfile is built as is, user data goes on a mounted
-bucket at `APP_USERS_PATH` with `REQUIRED_FS_TYPE=fuse`, and `ALERTS_CHANNELS`
-is a user-provided Secret Manager secret named `channels`. Values that
-identify one deployment (`AUTH_ISSUER`, `ADMIN_EMAILS`, `AUTH_EMAIL_CLAIM`, a
-custom domain) are deliberately not in the manifest; a gapp fleet entry
-carries them and gapp merges them over `gapp.yaml` by variable name at deploy
-time.
+Every variable the server reads. The table is for scanning; the reference
+below it has the format, an example, and what happens when a value is
+missing or wrong. All are read once, at startup: a change needs a restart.
 
-```bash
-gapp secrets set channels            # prompts for the channel lines; or --from-stdin
-gapp ci setup alerts --repo echomodel/alerts --project <project-id> [--domain alerts.example.com]
-gapp ci deploy alerts                # or dispatch the fleet's gapp-deploy workflow
-gapp ci status alerts --live         # URL and health
-```
+| Variable | Applies to | Required | Type | Default when unset | Secret |
+|---|---|---|---|---|---|
+| `AUTH_ISSUER` | HTTP | yes | URL | none: startup fails | no |
+| `ADMIN_EMAILS` | HTTP | yes, to administer | list of emails | none: no administrators | no |
+| `ALERTS_CHANNELS` | both | yes, unless the channels file exists | multi-line text | the channels file | **yes** |
+| `APP_USERS_PATH` | both | yes, for durable data | directory path | `$XDG_DATA_HOME/alerts/users` | no |
+| `REQUIRED_FS_TYPE` | both | recommended | list of filesystem types | no check | no |
+| `AUTH_EMAIL_CLAIM` | HTTP | if the issuer namespaces it | claim name | `email` | no |
+| `AUTH_ADMISSION` | HTTP | no | enum: `allowlist`, `open` | `allowlist` | no |
+| `MAX_USERS` | HTTP | no | integer ≥ 1 | unlimited | no |
+| `AUTH_AUDIENCE` | HTTP | no | URL | derived from the request's `Host` | no |
+| `AUTH_JWKS_URI` | HTTP | no | URL | OpenID discovery from the issuer | no |
+| `ADMIN_CLIENT_IDS` | HTTP | no | list of client ids | none | no |
+| `USAGE_FLUSH_SECONDS` | HTTP | no | integer, seconds | `60` | no |
+| `XDG_CONFIG_HOME` | both | no | directory path | `~/.config` | no |
+| `XDG_DATA_HOME` | both | no | directory path | `~/.local/share` | no |
 
-Changing the channel lines means `gapp secrets set channels` again and a
-redeploy: the variable is read when the container starts.
+Lists are comma-separated; spaces around items are ignored.
+
+### Variable reference
+
+**`AUTH_ISSUER`** — the identity provider that issues access tokens.
+- Format: the issuer URL exactly as in the token's `iss` claim, trailing
+  slash included if the issuer uses one. Example: `https://login.example.com/`.
+- Missing: `alerts-mcp serve` refuses to start, naming the variable. stdio
+  ignores it.
+- Wrong: every request after sign-in gets `401`. The startup line
+  `mcp_app.startup auth issuer=...` shows the value in use; a missing or
+  extra trailing slash is the usual mistake.
+
+**`ADMIN_EMAILS`** — who administers this deployment.
+- Format: comma-separated emails, compared lower-cased. Example:
+  `you@example.com,ops@example.com`.
+- Effect: each email is admitted on first sign-in, sees the admin tools
+  (`grant_channel`, `revoke_channel`, `users_list`, `user_register`,
+  `user_block`, `usage_report`), and may call `/admin`.
+- Missing: the server serves registered users but nobody can administer it
+  or bootstrap the first user; startup logs a warning. Changing the list is
+  a restart.
+
+**`ALERTS_CHANNELS`** — the channel definitions, the server's only secret.
+- Format: one destination per line, `name = apprise-url`; several
+  comma-separated names may share a line, and a name on several lines sends
+  to all of them. Blank lines and `#` comments are ignored. See
+  [Configure channels](#configure-channels).
+- Precedence: when set and non-empty it replaces the channels file
+  (`$XDG_CONFIG_HOME/alerts/channels`) entirely.
+- Missing (and no file): every tool answers that no channels are
+  configured; nothing fails at startup.
+- Wrong: a line Apprise rejects is skipped and reported to administrators
+  by channel name and line number in `list_channels`, never by URL.
+- Handling: inject from a secret store; it carries every destination's
+  credential. Rotate by replacing a line and restarting.
+
+**`APP_USERS_PATH`** — where per-user records (admission state, grants)
+and usage counters live.
+- Format: a directory path; created if missing.
+- Default: `$XDG_DATA_HOME/alerts/users`, which in a container is the
+  image's filesystem and is lost on restart. Point it at a mounted volume
+  for any real deployment.
+
+**`REQUIRED_FS_TYPE`** — a startup guard that the data directory is on the
+storage you meant.
+- Format: comma-separated filesystem types, matched on `.` boundaries
+  (`fuse` matches `fuse.gcsfuse`). Examples: `fuse`, `nfs`, `ext4,xfs`.
+- Effect: if `APP_USERS_PATH` is missing, unwritable, or on another
+  filesystem type, the process exits non-zero instead of serving with data
+  that would vanish. Unset: no check; `/health` then reports storage
+  `unverified` and status `degraded`.
+
+**`AUTH_EMAIL_CLAIM`** — the access-token claim carrying the user's email.
+- Format: a claim name. Issuers that refuse standard claim names in access
+  tokens need the full namespaced name, e.g. `https://example.com/email`.
+- Wrong: signed-in users get `401` (no email in the token).
+
+**`AUTH_ADMISSION`** — who besides `ADMIN_EMAILS` gets in on first sign-in.
+- Values: `allowlist` (default): only emails an administrator registered
+  with `user_register`; anyone else is parked `pending` with a `403`.
+  `open`: any email the issuer vouches for is approved, up to `MAX_USERS`.
+- Note: open admission still gives a new user no channels; an
+  administrator grants them with `grant_channel`.
+
+**`MAX_USERS`** — cap on user records sign-in may create.
+- Format: a positive integer. Unset: unlimited. Anything else: startup
+  fails naming the value. Administrators are never counted out.
+
+**`AUTH_AUDIENCE`** — pins the audience a token must carry.
+- Default: the URL the request arrived at, from `Host`. Set it only when
+  the server is reached by IP address or under several hostnames.
+
+**`AUTH_JWKS_URI`** — where the issuer's signing keys are.
+- Default: found by OpenID discovery from `AUTH_ISSUER`. Set it only for an
+  issuer without discovery.
+
+**`ADMIN_CLIENT_IDS`** — machine clients treated as administrators.
+- Format: comma-separated client ids from client-credentials tokens. For
+  scripts that call the admin tools; the principal is `client:<id>`.
+
+**`USAGE_FLUSH_SECONDS`** — how often tool-call counters reach the data
+directory.
+- Format: integer seconds. Default `60`. stdio flushes after every call.
+
+**`XDG_CONFIG_HOME`, `XDG_DATA_HOME`** — the standard base directories.
+- They place the channels file (`$XDG_CONFIG_HOME/alerts/channels`), the
+  admin CLI's saved target (`$XDG_CONFIG_HOME/alerts/setup.json`), and the
+  default data directory. Rarely set by hand.
+
+Not read: `PORT` (use `--port`) and any log-level variable.
 
 ## Connect the admin CLI
 
@@ -223,8 +315,8 @@ same two steps: sign in, then `grant_channel` for their own email.
 ### Rotating a channel credential
 
 A credential lives only in the channel definitions. Replace the line
-(`~/.config/alerts/channels` locally; `gapp secrets set channels` and a
-redeploy, or the platform's equivalent, for a deployment). Grants refer to
+(`~/.config/alerts/channels` locally; the platform's secret store and a
+restart for a deployment). Grants refer to
 the channel by name, so nothing else changes. When a webhook or topic leaks,
 revoke it at the service first, then replace the line.
 
@@ -273,15 +365,15 @@ An administrator asks the connector for `usage_report(week="current")` or
 and the most active users with masked emails. Non-administrators never see
 the tool.
 
-## Configuration reference
+## Files
 
-| Path or variable | Purpose |
+| Path | Purpose |
 |---|---|
-| `~/.config/alerts/channels` | Channel definitions for a local server (`$XDG_CONFIG_HOME/alerts/channels`). |
-| `ALERTS_CHANNELS` | Channel definitions for a container; overrides the file. |
-| `<APP_USERS_PATH>/<user>/` | Per-user store: admission record and `grants.json` (`APP_USERS_PATH` overrides). |
-| `~/.config/alerts/setup.json` | The admin CLI's saved `connect` target. |
-| `AUTH_ISSUER`, `ADMIN_EMAILS`, `AUTH_EMAIL_CLAIM`, `AUTH_AUDIENCE`, `AUTH_ADMISSION`, `MAX_USERS`, `REQUIRED_FS_TYPE` | mcp-app's HTTP settings; see the runtime contract above and the mcp-app README for admission policy. |
+| `$XDG_CONFIG_HOME/alerts/channels` | Channel definitions for a local server; `ALERTS_CHANNELS` overrides it. |
+| `$APP_USERS_PATH/<user>/` | Per-user store: admission record and `grants.json`. |
+| `$XDG_CONFIG_HOME/alerts/setup.json` | The admin CLI's saved `connect` target. |
+
+Variables are in [Environment variables](#environment-variables).
 
 `urgency` maps to Apprise's notification type: `low` to info, `normal` to
 warning, `high` to failure. Services that colour or tag by type show it
