@@ -136,14 +136,16 @@ sharing of a channel is administrator-only: call `cls.require_admin()` first.
 
 `gapp.yaml` describes what every deployment of this repo has in common: the
 Dockerfile, public HTTP (the app does its own auth), the data path on the
-mounted bucket with `REQUIRED_FS_TYPE=fuse`, and `ALERTS_CHANNELS` as a
-user-provided secret. Anything that names one deployment (`AUTH_ISSUER`,
-`ADMIN_EMAILS`, `AUTH_EMAIL_CLAIM`, a domain) stays out of the repo: a gapp
-fleet entry carries it and gapp merges `env` entries by name over the
-manifest at deploy time. Any other platform supplies the same variables its
-own way (the Dockerfile and the runtime contract in the README are the
-contract). Never put a value that identifies a deployment, or any
-credential, in this repo.
+mounted bucket with `REQUIRED_FS_TYPE=fuse`, the email claim name, and
+three user-provided Secret Manager secrets: `channels`, `auth-issuer` and
+`admin-emails`. The last two are plain config to the server, but they name
+one deployment's tenant and administrators; gapp has no channel for
+operator-supplied plain values outside the repo, so they ride in Secret
+Manager, the same pattern other mcp-app deployments use. The custom domain
+lives on the deployment (`gapp ci setup --domain`), not in the manifest. Any
+other platform supplies the same variables its own way (the Dockerfile and
+the runtime contract in the README are the contract). Never put a value
+that identifies a deployment, or any credential, in this repo.
 
 ## Releases
 

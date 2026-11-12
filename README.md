@@ -163,22 +163,26 @@ user in, and holds the token. Nothing is pasted anywhere.
 
 The repo carries a [gapp](https://github.com/echomodel/gapp) manifest,
 `gapp.yaml`: the Dockerfile is built as is, user data goes on a mounted
-bucket at `APP_USERS_PATH` with `REQUIRED_FS_TYPE=fuse`, and `ALERTS_CHANNELS`
-is a user-provided Secret Manager secret named `channels`. Values that
-identify one deployment (`AUTH_ISSUER`, `ADMIN_EMAILS`, `AUTH_EMAIL_CLAIM`, a
-custom domain) are deliberately not in the manifest; a gapp fleet entry
-carries them and gapp merges them over `gapp.yaml` by variable name at deploy
-time.
+bucket at `APP_USERS_PATH` with `REQUIRED_FS_TYPE=fuse`, and three values
+come from Secret Manager, set once per deployment: `channels` (the channel
+lines), `auth-issuer` and `admin-emails`. The last two are not secrets to
+the server, but they name one deployment's tenant and administrators, and
+Secret Manager is gapp's channel for operator-supplied values that must not
+sit in a public repo. `AUTH_EMAIL_CLAIM` is a plain value in the manifest.
+The custom domain is set on the deployment with `gapp ci setup --domain`,
+never in the manifest.
 
 ```bash
-gapp secrets set channels            # prompts for the channel lines; or --from-stdin
-gapp ci setup alerts --repo echomodel/alerts --project <project-id> [--domain alerts.example.com]
+gapp secrets set auth-issuer         # https://<tenant>/  (trailing slash)
+gapp secrets set admin-emails        # you@example.com
+gapp secrets set channels            # the channel lines; or --from-stdin
+gapp ci setup alerts --repo echomodel/alerts --project <project-id> --domain mcp.alerts.example.com
 gapp ci deploy alerts                # or dispatch the fleet's gapp-deploy workflow
 gapp ci status alerts --live         # URL and health
 ```
 
-Changing the channel lines means `gapp secrets set channels` again and a
-redeploy: the variable is read when the container starts.
+Changing any of the three means `gapp secrets set` again and a redeploy:
+the variables are read when the container starts.
 
 ## Connect the admin CLI
 

@@ -2,18 +2,29 @@
 # (https://github.com/echomodel/gapp). Optional; the server also runs as
 # a local stdio MCP server or in any container (see README "Deploy").
 #
-# The repo's Dockerfile is built as is. Values that identify one
-# deployment (AUTH_ISSUER, ADMIN_EMAILS, AUTH_EMAIL_CLAIM, a custom
-# domain) are not here: a gapp fleet entry or the deploying environment
-# supplies them, merged over this file by env var name.
+# The repo's Dockerfile is built as is. The custom domain is set per
+# deployment with `gapp ci setup --domain`, never here.
+#
+# AUTH_ISSUER and ADMIN_EMAILS are not secrets to the server, but they
+# name one deployment's identity-provider tenant and its administrators,
+# and gapp has no channel for operator-supplied plain values outside the
+# repo, so they are supplied through Secret Manager like the channel lines.
 
 public: true
 
 env:
+  - name: AUTH_ISSUER
+    secret:
+      name: auth-issuer
+  - name: ADMIN_EMAILS
+    secret:
+      name: admin-emails
+  - name: AUTH_EMAIL_CLAIM
+    value: "https://echomodel.ai/email"
+  - name: ALERTS_CHANNELS
+    secret:
+      name: channels
   - name: APP_USERS_PATH
     value: "{{SOLUTION_DATA_PATH}}/users"
   - name: REQUIRED_FS_TYPE
     value: fuse
-  - name: ALERTS_CHANNELS
-    secret:
-      name: channels
