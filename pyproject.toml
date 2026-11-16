@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp-app @ git+https://github.com/echomodel/mcp-app.git@v2.0.0",
+    "mcp-app @ https://github.com/echomodel/mcp-app/archive/refs/tags/v2.0.0.tar.gz",
     "apprise>=2.2,<3",
 ]
 
